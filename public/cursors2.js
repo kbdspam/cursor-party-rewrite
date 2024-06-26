@@ -29,7 +29,7 @@ document.cursorPartyWs = {
 
 		this.shouldReconnect = true;
 
-		const socket = new WebSocket(this.url);
+		const socket = this.socket = new WebSocket(this.url);
 		socket.addEventListener("open", (e) => {
 		});
 		socket.addEventListener("close", (e) => {
@@ -49,7 +49,6 @@ document.cursorPartyWs = {
 				this.handleMessageJSON(JSON.parse(e.data));
 			}
 		});
-		this.socket = socket;
 	},
 	close: function() {
 		this.shouldReconnect = false;
@@ -72,7 +71,7 @@ document.cursorPartyWs = {
 		// add a classname
 		cursorsRoot.id = "cursorsRoot";
 		//// RIPPED FROM cursor-party/src/cursors.txt
-		const cursorsSudo = document.createElement("div");
+		const cursorsSudo = this.cursorsSudo = document.createElement("div");
 		cursorsRoot.appendChild(cursorsSudo);
 		cursorsSudo.style.position = this.within == "window" ? "fixed" : "absolute";
 		cursorsSudo.style.top = 0;
@@ -93,14 +92,15 @@ document.cursorPartyWs = {
 		this.divsInitialized = true;
 	},
 	handleClose: function() {
+		console.log("handleClose called!");
 		// this.disableCursorTracking();
 		clearTimeout(this.queueMyPositionTimeout);
-		clearInterval(this.updatePartyCountInterval);
 		this.queueMyPositionTimeout = -1;
-		this.updatePartyCountInterval = -1;
+		// clearInterval(this.updatePartyCountInterval);
+		// this.updatePartyCountInterval = -1;
 		this.users.clear();
-		document.getElementById("cursorsSudo").innerHTML = "";
-		// if (document.getElementById("cursorsRoot")) document.getElementById("cursorsRoot").remove();
+
+		this.cursorsSudo.replaceChildren(); // remove all them bitches
 	},
 	useCursorTracking: function(within) {
 		// within can be "window" or "document"
@@ -191,6 +191,7 @@ document.cursorPartyWs = {
 	queueMyPosition: function() {
 		if (this.socket != null && this.socket.readyState == 1 && this.queueMyPositionTimeout == -1) {
 			this.queueMyPositionTimeout = setTimeout(() => {
+				if (this.socket == null) return;
 				this.queueMyPositionTimeout = -1;
 				const bounds = this.within == "window" ? this.windowDimensions : this.scrollDimensions;
 				const cur = this.within == "window" ? this.myPositionWindow : this.myPositionDocument;
