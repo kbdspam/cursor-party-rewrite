@@ -32,7 +32,7 @@ document.cursorPartyWs = {
 		const socket = this.socket = new WebSocket(this.url);
 		socket.addEventListener("open", (e) => {
 		});
-		socket.addEventListener("close", (e) => {
+		socket.addEventListener("close", this.socketCloseHandler = (e) => {
 			this.handleClose();
 			if (this.shouldReconnect) {
 				this.reconnectTimeout = setTimeout(() => {
@@ -42,7 +42,7 @@ document.cursorPartyWs = {
 				}, 3000);
 			}
 		});
-		socket.addEventListener("message", async (e) => {
+		socket.addEventListener("message", this.socketMessageHandler = async (e) => {
 			if (e.data instanceof Blob) {
 				this.handleMessageBinary(await e.data.arrayBuffer());
 			} else {
@@ -55,6 +55,10 @@ document.cursorPartyWs = {
 		clearTimeout(this.reconnectTimeout);
 		this.reconnectTimeout = -1;
 		if (this.socket != null) {
+			this.socket.removeEventListener("close", this.socketCloseHandler);
+			this.socket.removeEventListener("message", this.socketMessageHandler);
+			this.socketCloseHandler({});
+			// fucking socket doesn't want to close soon so we just unregister it and fuck off...
 			this.socket.close();
 			this.socket = null;
 		}
@@ -92,7 +96,6 @@ document.cursorPartyWs = {
 		this.divsInitialized = true;
 	},
 	handleClose: function() {
-		console.log("handleClose called!");
 		// this.disableCursorTracking();
 		clearTimeout(this.queueMyPositionTimeout);
 		this.queueMyPositionTimeout = -1;
