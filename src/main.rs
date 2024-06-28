@@ -14,13 +14,15 @@ use serde::{Deserialize, Serialize};
 
 use std::{
 	collections::{HashMap, HashSet},
-	time::Duration,
+	time::{Duration, Instant},
 };
 use thiserror::Error;
 
 // Cookie Clicker runs at 30 fps so there's no reason to go higher...
 const FPS: f64 = 30.0;
-const BROADCAST_INTERVAL_SECS: f64 = 1.0 / FPS;
+const BROADCAST_INTERVAL: Duration = Duration::from_millis((1.0 / FPS * 1000.0) as u64);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(6);
 
 type ID = u32; // Don't change this willy-nilly because our update message assumes 32-bit integers.
 #[repr(u32)]
@@ -31,9 +33,15 @@ enum BinaryType {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum JsonMsg {
+enum JsonToUser {
 	#[allow(non_camel_case_types)]
 	myid(u32),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum JsonFromUser {
+	#[allow(non_camel_case_types)]
+	heartbeat(bool),
 }
 
 #[derive(Copy, Clone)]
@@ -66,12 +74,16 @@ impl Position {
 struct Session {
 	id: ID,
 	addr: Addr<State>,
-	// state: SharedState,
+	last_heartbeat: Instant,
 }
 impl Session {
 	fn heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
-		ctx.run_interval(std::time::Duration::from_secs(33), |_act, ctx| {
-			ctx.ping(b"69");
+		ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
+			if Instant::now().duration_since(act.last_heartbeat) > CLIENT_TIMEOUT {
+				ctx.stop();
+			} else {
+				ctx.text(serde_json::to_string(&JsonFromUser::heartbeat(true)).unwrap().as_str());
+			}
 		});
 	}
 }
@@ -120,8 +132,24 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Session {
 			return;
 		};
 		match msg {
+			// ws::Message::Ping(msg) => {
+			// 	self.last_heartbeat = Instant::now();
+			// 	ctx.pong(&msg);
+			// }
+			// ws::Message::Pong(_) => {
+			// 	self.last_heartbeat = Instant::now();
+			// }
 			ws::Message::Text(text) => {
-				println!("text = '{text}'");
+				let Ok(j) = serde_json::from_str::<JsonFromUser>(&text) else {
+					ctx.stop();
+					return;
+				};
+				match j {
+					JsonFromUser::heartbeat(_) => {
+						self.last_heartbeat = Instant::now();
+					}
+				}
+				// println!("text = '{text}'");
 			}
 			ws::Message::Binary(b) => {
 				let Ok(pos) = Position::get(&b) else {
@@ -164,7 +192,7 @@ impl Actor for State {
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 enum MessageToUser {
-	Json(JsonMsg),
+	Json(JsonToUser),
 	Binary(Bytes),
 }
 
@@ -203,7 +231,7 @@ impl Handler<Connect> for State {
 	fn handle(&mut self, connect_msg: Connect, _: &mut Context<Self>) -> Self::Result {
 		self.latest_id += 1;
 		let id = self.latest_id;
-		connect_msg.addr.do_send(MessageToUser::Json(JsonMsg::myid(id)));
+		connect_msg.addr.do_send(MessageToUser::Json(JsonToUser::myid(id)));
 		let len = self.users.len();
 		if len > 0 {
 			let mut msg = BytesMut::new();
@@ -233,11 +261,11 @@ impl Handler<Connect> for State {
 impl State {
 	fn queue_broadcast(&mut self, ctx: &mut <State as actix::Actor>::Context) {
 		let now = std::time::Instant::now();
-		if now.duration_since(self.last_broadcast).as_secs_f64() >= BROADCAST_INTERVAL_SECS {
+		if now.duration_since(self.last_broadcast) >= BROADCAST_INTERVAL {
 			self.broadcast_cursors();
 		} else if !self.broadcast_queued {
 			self.broadcast_queued = true;
-			ctx.run_later(Duration::from_secs_f64(BROADCAST_INTERVAL_SECS), |act, _ctx| {
+			ctx.run_later(BROADCAST_INTERVAL, |act, _ctx| {
 				act.last_broadcast = std::time::Instant::now();
 				println!("broadcast {:?}", std::time::Instant::now());
 				act.broadcast_cursors();
@@ -352,6 +380,7 @@ async fn handle_websocket(
 		Session {
 			id: 0,
 			addr: state.get_ref().clone(),
+			last_heartbeat: Instant::now(),
 		},
 		&req,
 		stream,
