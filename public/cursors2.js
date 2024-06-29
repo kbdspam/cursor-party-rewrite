@@ -38,9 +38,9 @@ document.cursorPartyWs = document.cursorPartyWs || {
 
 		this.shouldReconnect = true;
 
-		this.url = "ws://127.0.0.1:1999/party/rock?_pk=0&from=cc";
-		if (window.location.hostname.endsWith(".ookie.click")) {
-			this.url = `wss://${window.location.hostname}/party/rock?_pk=0&from=cc`;
+		this.url = "wss://cursor-party-0.c.ookie.click/party/rock?_pk=0&from=cc";
+		if (document.cursorPartyCC == "localhost") {
+			this.url = "ws://127.0.0.1:1999/party/rock?_pk=0&from=cc";
 		}
 
 		const socket = this.socket = new WebSocket(this.url);
