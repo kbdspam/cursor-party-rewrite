@@ -13,7 +13,7 @@ document.cursorPartyWs = document.cursorPartyWs || {
 	socket: null,
 
 	myid: 0,
-	users: new Map(),
+	users: new Map(), // u[0] = untransformed_pos, u[1] = screen coordinates
 
 	queueMyPositionTimeout: -1,
 	updatePartyCountInterval: -1,
@@ -30,6 +30,8 @@ document.cursorPartyWs = document.cursorPartyWs || {
 	shouldReconnect: false,
 	reconnectTimeout: -1,
 
+	updatedUsers: new Set(),
+
 	reconnect: function() {
 		if (!this.divsInitialized) this.initializeDivs();
 		this.close();
@@ -37,7 +39,7 @@ document.cursorPartyWs = document.cursorPartyWs || {
 		this.shouldReconnect = true;
 
 		this.url = "wss://cursor-party-0.c.ookie.click/party/rock?_pk=0&from=cc";
-		if (document.cursorPartyCC == "localhost") {
+		if (document.cursorPartyCC == "localhost" && false) {
 			this.url = "ws://127.0.0.1:1999/party/rock?_pk=0&from=cc";
 		}
 
@@ -77,27 +79,25 @@ document.cursorPartyWs = document.cursorPartyWs || {
 		}
 	},
 	initializeDivs: function() {
-		this.useCursorTracking("document");
+		// this.useCursorTracking("document");
+		this.useCursorTracking("window");
 
-		//// RIPPED FROM cursor-party/src/cursors.txt
-		const cursorsRoot = document.createElement("div");
-		document.body.appendChild(cursorsRoot);
-		// cursors display is absolute and needs a top-level relative container
-		document.documentElement.style.position = "relative";
-		document.documentElement.style.minHeight = "100dvh";
-		// add a classname
-		cursorsRoot.id = "cursorsRoot";
-		//// RIPPED FROM cursor-party/src/cursors.txt
-		const cursorsSudo = this.cursorsSudo = document.createElement("div");
-		cursorsRoot.appendChild(cursorsSudo);
-		cursorsSudo.style.position = this.within == "window" ? "fixed" : "absolute";
-		cursorsSudo.style.top = 0;
-		cursorsSudo.style.left = 0;
-		cursorsSudo.style.right = 0;
-		cursorsSudo.style.bottom = 0;
-		cursorsSudo.style.overflow = "clip";
-		cursorsSudo.style.pointerEvents = "none";
-		cursorsSudo.id = "cursorsSudo";
+		const canvas = this.canvas = document.createElement("canvas");
+		document.body.appendChild(canvas);
+		canvas.height = window.innerHeight;
+		canvas.width = window.innerWidth;
+		canvas.style.position = this.within == "window" ? "fixed" : "absolute";
+		canvas.style.top = 0;
+		canvas.style.left = 0;
+		canvas.style.right = 0;
+		canvas.style.bottom = 0;
+		canvas.style.overflow = "clip";
+		canvas.style.pointerEvents = "none";
+		canvas.id = "cursorCanvas";
+		// canvas.style.display = "block";
+		this.canvas2dctx = canvas.getContext("2d");
+		this.img = new Image(32, 32);
+		this.img.src = cursorImage;
 
 		this.updatePartyCountInterval = setInterval(() => {
 			document.cursorPartyCount = this.users.size;
@@ -115,16 +115,11 @@ document.cursorPartyWs = document.cursorPartyWs || {
 		// clearInterval(this.updatePartyCountInterval);
 		// this.updatePartyCountInterval = -1;
 		this.users.clear();
-
-		this.cursorsSudo.replaceChildren(); // remove all them bitches
+		redrawAllCursors();
 	},
 	useCursorTracking: function(within) {
 		// within can be "window" or "document"
 		this.within = within;
-
-		document.cursorPartyMurder = () => {
-			// unneeded now...
-		};
 
 		window.addEventListener("resize", this.onResizeListener = (e) => this.onResize());
 		this.onResize();
@@ -147,6 +142,10 @@ document.cursorPartyWs = document.cursorPartyWs || {
 	onResize: function() {
 		this.updateScrollDimensions();
 		this.windowDimensions = [window.innerWidth, window.innerHeight];
+		if (this.canvas) {
+			this.canvas.height = window.innerHeight;
+			this.canvas.width = window.innerWidth;
+		}
 		this.transformAllCursors();
 	},
 	onScroll: function() {
@@ -167,52 +166,28 @@ document.cursorPartyWs = document.cursorPartyWs || {
 		this.close();
 		console.log("onUnload");
 	},
-	onUnload: function(e) {
+	onBeforeUnload: function(e) {
 		this.close();
 		console.log("onBeforeUnload");
 	},
 	transformAllCursors: function() {
 		// - transform all cursors from users
-		this.users.forEach((v, k, m) => this.updateUserPositionInternal(v));
+		this.users.forEach((v, k, m) => v[1] = this.screenCoordinates(v[0]));
+		this.redrawAllCursors();
 	},
-	createCursor: function(id, untransformed_pos) {
-		const div = document.createElement("div");
-		const u = [untransformed_pos, null, div];
-		this.updateUserPositionInternal(u);
-		this.users.set(id, u);
-		document.getElementById("cursorsSudo").appendChild(div);
-		div.id = `cursor-user-${id}`;
-		div.style.opacity = 1.0;
-		div.style.zIndex = 1001;
-		div.style.position = "absolute";
-		// div.style.transform = `translate(${transformed_pos[0] - 10}px, ${transformed_pos[1] - 10}px)`;
-		// div.style.left = `${pos[0] * window.innerWidth - 10}px`;
-		// div.style.top = `${pos[1] * window.innerHeight - 10}px`;
-		const img = document.createElement("img");
-		img.style.transform = "scale(.5)";
-		img.src = cursorImage;
-		div.appendChild(img);
-	},
-	transformCursor: function(cur) {
-		const bounds = this.within == "window" ? this.windowDimensions : this.scrollDimensions;
-		return [cur[0] * bounds[0], cur[1] * bounds[1]];
-	},
-	updateUserPositionInternal: function(u) {
-		u[1] = this.transformCursor(u[0]);
-		u[2].style.transform = `translate(${u[1][0] - 10}px, ${u[1][1] - 10}px)`;
-		// u[1].style.left = `${pos[0] * window.innerWidth - 10}px`;
-		// u[1].style.top = `${pos[1] * window.innerHeight - 10}px`;
-	},
-	updateUserPosition: function(id, untransformed_pos) {
-		if (id == this.myid)
+	redrawAllCursors: function() {
+		if (!this.canvas)
 			return;
-		let u = this.users.get(id);
-		if (u == undefined) {
-			this.createCursor(id, untransformed_pos);
-		} else {
-			u[0] = untransformed_pos;
-			this.updateUserPositionInternal(u);
-		}
+		this.canvas2dctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+		const users = [...this.users.keys()].sort().reverse();
+		users.map((id) => this.users.get(id)).forEach((u) => {
+			this.canvas2dctx.drawImage(this.img, u[1][0], u[1][1], 32, 32);
+		});
+	},
+	screenCoordinates: function(cur) {
+		const bounds = this.within == "window" ? this.windowDimensions : this.scrollDimensions;
+		// round them because apparently canvas elements like whole numbers
+		return [Math.round(cur[0] * bounds[0]), Math.round(cur[1] * bounds[1])];
 	},
 	queueMyPosition: function() {
 		if (this.socket != null && this.socket.readyState == 1 && this.queueMyPositionTimeout == -1) {
@@ -229,14 +204,13 @@ document.cursorPartyWs = document.cursorPartyWs || {
 			}, 25);
 		}
 	},
-	removeUser: function(id) {
-		this.users.delete(id);
-		document.getElementById("cursor-user-" + id).remove();
-	},
 	handleMessageBinary: function(buffer) {
-		let pos = 0;
+		const updatedUsers = new Map();
+		const removedUsers = new Set();
+		const redrawTheseUsers = new Set();
+
 		const view = new DataView(buffer);
-		for (const _c = view.byteLength / 4; pos < _c;) {
+		for (let pos = 0, _c = view.byteLength / 4; pos < _c;) {
 			// we read all these values as little-endian
 			const type = view.getUint32(pos++ * 4, true);
 			const count = view.getUint32(pos++ * 4, true);
@@ -247,14 +221,82 @@ document.cursorPartyWs = document.cursorPartyWs || {
 					const id = view.getUint32(pos++ * 4, true);
 					const x = view.getFloat32(pos++ * 4, true);
 					const y = view.getFloat32(pos++ * 4, true);
-					this.updateUserPosition(id, [x, y]);
+					if (id == this.myid)
+						continue;
+					redrawTheseUsers.add(id);
+					updatedUsers.set(id, [[x, y], this.screenCoordinates([x, y])]);
 				}
 			} else if (type == 3) {
 				for (let i = 0; i < count; i++) {
-					this.removeUser(view.getUint32(pos++ * 4, true));
+					const id = view.getUint32(pos++ * 4, true);
+					removedUsers.add(id);
 				}
 			}
 		}
+
+		const idleUsers = new Map(
+			(new Set(this.users.keys()))
+			.difference(
+				redrawTheseUsers.union(removedUsers)
+			)
+			.entries()
+			.map(([id, _id]) => [id, this.users.get(id)])
+			.filter((v) => v[1])
+		);
+		// console.log("idleUsers", idleUsers);
+
+		const clearThesePositions = [];
+
+		this.doOverlapCheck = (cu) => {
+			if (!cu) return;
+			clearThesePositions.push(cu);
+			idleUsers.forEach((idle, id, m) => {
+				const noOverlap = (cu[0])      > (idle[1][0]+32) ||
+				                  (idle[1][0]) > (cu[0]+32)      ||
+				                  (cu[1])      > (idle[1][1]+32) ||
+				                  (idle[1][1]) > (cu[1]+32);
+				/*
+				if (   (cu[0])    < (idle[1][0]+32) // RectA.Left   < RectB.Right
+					&& (cu[0]+32) > (idle[1][0])    // RectA.Right  > RectB.Left
+					&& (cu[1])    > (idle[1][1]+32) // RectA.Top    > RectB.Bottom
+					&& (cu[1]+32) < (idle[1][1]))   // RectA.Bottom < RectB.Top
+				*/
+				if (!noOverlap)
+				{
+					// console.log(`overlapping ${id}`);
+					idleUsers.delete(id);
+					redrawTheseUsers.add(id);
+					this.doOverlapCheck(idle[1]);
+				}
+			});
+		};
+
+		removedUsers.forEach((v, k, s) => {
+			const u = this.users.get(k);
+			if (u) {
+				this.users.delete(k);
+				this.doOverlapCheck(u[1]);
+			}
+		});
+		updatedUsers.forEach((v, k, m) => {
+			const u = this.users.get(k);
+			if (u) {
+				this.doOverlapCheck(u[1]);
+			}
+			this.users.set(k, v);
+			this.doOverlapCheck(v[1]);
+		});
+		this.doOverlapCheck = null;
+
+		clearThesePositions.forEach((v, k, a) => this.canvas2dctx.clearRect(v[0], v[1], 32, 32));
+		// console.log("redraw these", redrawTheseUsers);
+		[...redrawTheseUsers].sort().reverse().forEach((id, k, a) => {
+			const u = this.users.get(id);
+			if (u)
+				this.canvas2dctx.drawImage(this.img, u[1][0], u[1][1], 32, 32);
+			else
+				console.log(`${id} was bad?`);
+		});
 	},
 	handleMessageJSON: function(msg) {
 		if (msg.myid) {
