@@ -44,7 +44,7 @@ enum JsonFromUser {
 	heartbeat(bool),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 struct Position {
 	x: f32,
 	y: f32,
@@ -164,7 +164,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Session {
 }
 struct User {
 	addr: Recipient<MessageToUser>,
-	pos: Position,
+	queued_position: Position,
+	last_broadcasted_position: Position,
 }
 struct State {
 	latest_id: u32,
@@ -208,9 +209,14 @@ struct PositionUpdate(ID, Position);
 impl Handler<PositionUpdate> for State {
 	type Result = ();
 	fn handle(&mut self, msg: PositionUpdate, ctx: &mut Self::Context) -> Self::Result {
-		let _ = self.queued_updates.insert(msg.0, msg.1);
-		self.users.get_mut(&msg.0).unwrap().pos = msg.1;
-		self.queue_broadcast(ctx);
+		let user = self.users.get_mut(&msg.0).unwrap();
+		user.queued_position = msg.1;
+		if user.last_broadcasted_position == msg.1 {
+			let _ = self.queued_updates.remove(&msg.0);
+		} else {
+			let _ = self.queued_updates.insert(msg.0, msg.1);
+			self.queue_broadcast(ctx);
+		}
 	}
 }
 #[derive(Message)]
@@ -240,8 +246,8 @@ impl Handler<Connect> for State {
 			msg.extend_from_slice(&((self.users.len() as u32).to_le_bytes()));
 			for (id, user) in &self.users {
 				msg.extend_from_slice(&id.to_le_bytes());
-				msg.extend_from_slice(&user.pos.x.to_le_bytes());
-				msg.extend_from_slice(&user.pos.y.to_le_bytes());
+				msg.extend_from_slice(&user.last_broadcasted_position.x.to_le_bytes());
+				msg.extend_from_slice(&user.last_broadcasted_position.y.to_le_bytes());
 			}
 			connect_msg.addr.do_send(MessageToUser::Binary(msg.freeze()));
 		}
@@ -251,7 +257,8 @@ impl Handler<Connect> for State {
 				id,
 				User {
 					addr: connect_msg.addr,
-					pos: Position { x: 0.0, y: 0.0 }
+					queued_position: Position { x: 0.0, y: 0.0 },
+					last_broadcasted_position: Position { x: 0.0, y: 0.0 },
 				}
 			)
 			.is_none());
@@ -267,12 +274,20 @@ impl State {
 			self.broadcast_queued = true;
 			ctx.run_later(BROADCAST_INTERVAL, |act, _ctx| {
 				act.last_broadcast = std::time::Instant::now();
-				println!("broadcast {:?}", std::time::Instant::now());
+				if cfg!(debug_assertions) {
+					println!("broadcast {:?}", std::time::Instant::now());
+				}
 				act.broadcast_cursors();
 			});
 		}
 	}
 	fn broadcast_cursors(&mut self) {
+		if self.queued_removes.is_empty() && self.queued_updates.is_empty() {
+			// maybe we're here if we queued a broadcast in Handler<PositionUpdate>::handle() but
+			// later removed the queued update because they returned to the original position...
+			return;
+		}
+
 		let all_users: HashSet<ID> = self.users.keys().cloned().collect();
 		let updated_users: HashSet<ID> = self.queued_updates.keys().cloned().collect();
 		let idle_users: HashSet<ID> = all_users.difference(&updated_users).cloned().collect();
@@ -294,6 +309,10 @@ impl State {
 
 		if !updated_users.is_empty() {
 			for id in &updated_users {
+				{
+					let user = self.users.get_mut(id).unwrap();
+					user.last_broadcasted_position = user.queued_position;
+				}
 				if let Some(msg) = self.make_msg_for_updated_user(*id) {
 					self.users
 						.get(id)
