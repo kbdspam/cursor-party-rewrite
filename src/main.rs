@@ -225,6 +225,7 @@ impl Handler<Remove> for State {
 	type Result = ();
 	fn handle(&mut self, msg: Remove, ctx: &mut Self::Context) -> Self::Result {
 		if self.users.remove(&msg.0).is_some() {
+			println!("left {} ; connections = {}", msg.0, self.users.len());
 			let _ = self.queued_updates.remove(&msg.0);
 			self.queued_removes.push(msg.0);
 			self.queue_broadcast(ctx);
@@ -261,6 +262,9 @@ impl Handler<Connect> for State {
 				}
 			)
 			.is_none());
+
+		println!("join {id} ; connections = {}", self.users.len());
+
 		id
 	}
 }
@@ -328,9 +332,9 @@ impl State {
 	}
 	fn make_msg_for_updated_user(&mut self, skip_this_id: ID) -> Option<BytesMut> {
 		let mut msg = None;
-		// if .len() < 1 then this function wasn't called
+		// if .len() == 0 then this function wasn't called
 		// if .len() == 1 then this user is the only user in the queued updates...
-		if !self.queued_updates.is_empty() {
+		if self.queued_updates.len() > 1 {
 			let msg = msg.get_or_insert(BytesMut::new());
 			msg.extend_from_slice(&((BinaryType::Update as u32).to_le_bytes()));
 			msg.extend_from_slice(&(((self.queued_updates.len() - 1) as u32).to_le_bytes()));
