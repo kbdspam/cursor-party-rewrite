@@ -409,13 +409,15 @@ async fn handle_websocket(
 async fn main() -> std::io::Result<()> {
 	// let state: SharedState = Default::default();
 	let state = State::default().start();
-	HttpServer::new(move || {
+	let server = HttpServer::new(move || {
 		actix_web::App::new()
 			.app_data(web::Data::new(state.clone()))
-			.route("/party/rock", web::get().to(handle_websocket))
-	})
+			.route("/party/rock2", web::get().to(handle_websocket))
+	});
+	#[cfg(not(target_os = "windows"))]
+	let server = server.bind_uds("/run/cursor_party_rock2.sock")?;
 	// TODO: .bind_uds() on Linux for a unix socket...
-	.bind(("127.0.0.1", 1999))?
-	.run()
-	.await
+	#[cfg(target_os = "windows")]
+	let server = server.bind(("127.0.0.1", 1999))?;
+	server.run().await
 }
