@@ -416,7 +416,14 @@ async fn main() -> std::io::Result<()> {
 	HttpServer::new(move || {
 		actix_web::App::new()
 			.app_data(web::Data::new(state.clone()))
+			.route("/party/rock", web::get().to(handle_websocket))
 			.route("/party/rock2", web::get().to(handle_websocket))
+			// >If the mount path is set as the root path /, services registered after this one will be inaccessible. Register more specific handlers and services first.
+			.service(
+				actix_files::Files::new("/", "./public")
+					.prefer_utf8(true)
+					.index_file("index.html"),
+			)
 	})
 	// TODO: .bind_uds() on Linux for a unix socket...
 	.bind(("127.0.0.1", 2000))?
