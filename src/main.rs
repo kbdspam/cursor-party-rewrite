@@ -2,7 +2,6 @@
 // Copyright
 
 #![forbid(unsafe_code)]
-#![feature(let_chains)]
 
 use actix::prelude::*;
 use actix_web::{
