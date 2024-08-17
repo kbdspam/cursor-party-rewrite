@@ -36,11 +36,10 @@ document.cursorPartyWs = document.cursorPartyWs || {
 
 		this.shouldReconnect = true;
 
-		this.url = "wss://cursor-party-0.c.ookie.click/party/rock?_pk=0&from=cc";
 		if (document.cursorPartyCC == "localhost") {
-			this.url = "ws://127.0.0.1:2000/party/rock?_pk=0&from=cc";
-		} else if (document.cursorPartyCC == "rock2") {
-			this.url = "wss://cursor-party-0.c.ookie.click/party/rock2?_pk=0&from=cc";
+			this.url = "ws://127.0.0.1:2000/party/rock?from=index";
+		} else {
+			this.url = `wss://cursor-party-0.c.ookie.click/party/rock?from=${document.cursorPartyCC}`;
 		}
 
 		const socket = this.socket = new WebSocket(this.url);

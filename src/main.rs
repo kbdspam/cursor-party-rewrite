@@ -393,11 +393,27 @@ impl State {
 	}
 }
 
+fn bad_from_query(req: &HttpRequest) -> bool {
+	// Sun Aug 18 2024 21:37:36 GMT+0000
+	if time::OffsetDateTime::now_utc().unix_timestamp() > 1724017056 {
+		// we want "https://cursor-party-0.c.ookie.click/party/rock?from=cc2" and similar...
+		!req.full_url()
+			.query_pairs()
+			.any(|(k, v)| k == "from" && (v == "cc2" || v == "index"))
+	} else {
+		false
+	}
+}
+
 async fn handle_websocket(
 	req: HttpRequest,
 	stream: web::Payload,
 	state: web::Data<Addr<State>>,
 ) -> Result<HttpResponse, actix_web::Error> {
+	if bad_from_query(&req) {
+		return Ok(HttpResponse::Forbidden().finish());
+	}
+
 	ws::start(
 		Session {
 			id: 0,
@@ -417,7 +433,6 @@ async fn main() -> std::io::Result<()> {
 		actix_web::App::new()
 			.app_data(web::Data::new(state.clone()))
 			.route("/party/rock", web::get().to(handle_websocket))
-			.route("/party/rock2", web::get().to(handle_websocket))
 			// >If the mount path is set as the root path /, services registered after this one will be inaccessible. Register more specific handlers and services first.
 			.service(
 				actix_files::Files::new("/", "./public")
