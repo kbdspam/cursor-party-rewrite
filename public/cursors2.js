@@ -37,7 +37,7 @@ document.cursorPartyWs = document.cursorPartyWs || {
 		this.shouldReconnect = true;
 
 		if (document.cursorPartyCC == "localhost") {
-			this.url = "ws://127.0.0.1:2000/party/rock?from=index";
+			this.url = "ws://127.0.0.1:2001/party/rock?from=index";
 		} else {
 			this.url = `wss://cursor-party-0.c.ookie.click/party/rock?from=${document.cursorPartyCC}`;
 		}

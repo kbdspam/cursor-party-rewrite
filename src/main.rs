@@ -441,7 +441,7 @@ async fn main() -> std::io::Result<()> {
 			)
 	})
 	// TODO: .bind_uds() on Linux for a unix socket...
-	.bind(("127.0.0.1", 2000))?
+	.bind(("127.0.0.1", 2001))?
 	.run()
 	.await
 }
