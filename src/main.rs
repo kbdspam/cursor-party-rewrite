@@ -397,9 +397,10 @@ fn bad_from_query(req: &HttpRequest) -> bool {
 	// Sun Aug 18 2024 21:37:36 GMT+0000
 	if time::OffsetDateTime::now_utc().unix_timestamp() > 1724017056 {
 		// we want "https://cursor-party-0.c.ookie.click/party/rock?from=cc2" and similar...
+		// TODO: It's 2024-10-05 and there's still "cc"'s coming in and I'm not sure how so I give up...
 		!req.full_url()
 			.query_pairs()
-			.any(|(k, v)| k == "from" && (v == "cc2" || v == "index"))
+			.any(|(k, v)| k == "from" && (v == "cc" || v == "cc2" || v == "index"))
 	} else {
 		false
 	}
