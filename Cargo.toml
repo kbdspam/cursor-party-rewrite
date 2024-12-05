@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-thiserror = "1.0"
+thiserror = "2.0"
 
 time = "0.3"
 
